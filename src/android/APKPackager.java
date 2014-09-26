@@ -172,7 +172,7 @@ public class APKPackager  extends CordovaPlugin {
         // sign the APK with the supplied key/cert
         try {
             ZipSigner zipSigner = new ZipSigner();
-            zipSigner.signZip(keyStoreUrl, null, keyStorePassword, keyAlias, keyPassword, "RSA", generatedApkPath, output.getAbsolutePath());
+            zipSigner.signZip(keyStoreUrl, "BKS", keyStorePassword, keyAlias, keyPassword, "RSA", generatedApkPath, output.getAbsolutePath());
         } catch (Exception e) {
             callbackContext.error("ZipSigner Error: "+e.getMessage());
             return;
