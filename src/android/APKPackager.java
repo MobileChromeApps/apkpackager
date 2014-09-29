@@ -15,6 +15,9 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URL;
 import java.nio.channels.*;
+import java.security.Key;
+import java.security.KeyStore;
+import java.security.cert.Certificate;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -78,14 +81,11 @@ public class APKPackager  extends CordovaPlugin {
         Uri srcTemplateUri = null;
 	File wwwDir = null;
         File output = null;
-        URL keyStoreUrl = null;
-        char[] keyStorePassword = null;
-        String keyAlias = null;
-        char[] keyPassword = null;
         String appName = "";
         String packageName = "";
         String versionName = "";
         long versionCode = 0; // This is actually an unsigned int32.
+        JSONObject signingInfo=null;
 
         CordovaResourceApi cra = webView.getResourceApi();
 	try {
@@ -93,11 +93,8 @@ public class APKPackager  extends CordovaPlugin {
           srcTemplateUri = cra.remapUri(Uri.parse(args.getString(1)));
         wwwDir = cra.mapUriToFile(cra.remapUri(Uri.parse(args.getString(2))));
           output = cra.mapUriToFile(cra.remapUri(Uri.parse(args.getString(3))));
-        keyStoreUrl = new URL(cra.remapUri(Uri.parse(args.getString(4))).toString());
-        keyStorePassword = args.getString(5).toCharArray();
-        keyAlias = args.getString(6);
-        keyPassword = args.getString(7).toCharArray();
-        JSONObject jObject = args.getJSONObject(8);
+        signingInfo = args.getJSONObject(4);
+        JSONObject jObject = args.getJSONObject(5);
         appName = jObject.getString("appName");
         packageName = jObject.getString("packageName");
         versionName = jObject.getString("versionName");
@@ -109,6 +106,41 @@ public class APKPackager  extends CordovaPlugin {
             callbackContext.error("Missing arguments: "+e.getMessage());
             return;
 	}
+
+        ZipSigner zipSigner = null;
+        try {
+            zipSigner = new ZipSigner();
+            String keyPassword = signingInfo.getString("keyPassword");
+            if (signingInfo.has("publicKeyUrl")) {
+                X509Certificate cert = zipSigner.readPublicKey(new URL(cra.remapUri(Uri.parse(signingInfo.getString("publicKeyUrl"))).toString()));
+                PrivateKey pk = zipSigner.readPrivateKey(new URL(cra.remapUri(Uri.parse(signingInfo.getString("privateKeyUrl"))).toString()), keyPassword);
+                zipSigner.setKeys("custom", cert, pk, null);
+            } else {
+                URL keyStoreUrl = new URL(cra.remapUri(Uri.parse(signingInfo.getString("keyStoreUrl"))).toString());
+                char[] keyStorePassword = signingInfo.getString("storePassword").toCharArray();
+                String keyAlias = signingInfo.getString("keyAlias");
+
+                InputStream keystoreStream = null;
+                try {
+                    KeyStore keystore = KeyStore.getInstance("BKS");
+
+                    keystoreStream = keyStoreUrl.openStream();
+                    keystore.load(keystoreStream, keyStorePassword);
+                    Certificate cert = keystore.getCertificate(keyAlias);
+                    X509Certificate publicKey = (X509Certificate) cert;
+                    Key key = keystore.getKey(keyAlias, keyPassword.toCharArray());
+                    PrivateKey privateKey = (PrivateKey) key;
+
+                    zipSigner.setKeys("custom", publicKey, privateKey, "RSA", null);
+                } finally {
+                    if (keystoreStream != null) keystoreStream.close();
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            callbackContext.error(e.getMessage());
+            return;
+        }
 
         try {
             deleteDir(playground);
@@ -171,8 +203,7 @@ public class APKPackager  extends CordovaPlugin {
 
         // sign the APK with the supplied key/cert
         try {
-            ZipSigner zipSigner = new ZipSigner();
-            zipSigner.signZip(keyStoreUrl, "BKS", keyStorePassword, keyAlias, keyPassword, "RSA", generatedApkPath, output.getAbsolutePath());
+            zipSigner.signZip(generatedApkPath, output.getAbsolutePath());
         } catch (Exception e) {
             callbackContext.error("ZipSigner Error: "+e.getMessage());
             return;
