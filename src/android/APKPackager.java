@@ -106,16 +106,19 @@ public class APKPackager  extends CordovaPlugin {
             callbackContext.error("Missing arguments: "+e.getMessage());
             return;
 	}
+        Log.i(LOG_TAG, "Packaging started for " + packageName);
 
         ZipSigner zipSigner = null;
         try {
             zipSigner = new ZipSigner();
             String keyPassword = signingInfo.getString("keyPassword");
             if (signingInfo.has("publicKeyUrl")) {
+                Log.i(LOG_TAG, "Loading keys from certificate / private key pair");
                 X509Certificate cert = zipSigner.readPublicKey(new URL(cra.remapUri(Uri.parse(signingInfo.getString("publicKeyUrl"))).toString()));
                 PrivateKey pk = zipSigner.readPrivateKey(new URL(cra.remapUri(Uri.parse(signingInfo.getString("privateKeyUrl"))).toString()), keyPassword);
                 zipSigner.setKeys("custom", cert, pk, null);
             } else {
+                Log.i(LOG_TAG, "Loading keys from keystore");
                 URL keyStoreUrl = new URL(cra.remapUri(Uri.parse(signingInfo.getString("keyStoreUrl"))).toString());
                 char[] keyStorePassword = signingInfo.getString("storePassword").toCharArray();
                 String keyAlias = signingInfo.getString("keyAlias");
@@ -143,6 +146,7 @@ public class APKPackager  extends CordovaPlugin {
         }
 
         try {
+            Log.i(LOG_TAG, "Preparing app template");
             deleteDir(playground);
             output.delete();
             initTemplate(cra, cordova.getActivity().getAssets(), srcTemplateUri, template);
@@ -154,6 +158,7 @@ public class APKPackager  extends CordovaPlugin {
 
 
         try {
+            Log.i(LOG_TAG, "Updating AndroidManifest.xml");
 	  BinaryXMLParser parser = new BinaryXMLParser(template.getAbsolutePath()+"/AndroidManifest.xml");
   	  parser.parseXML();
 	  parser.changeString(parser.getAppName(), appName);
@@ -163,6 +168,7 @@ public class APKPackager  extends CordovaPlugin {
         // TODO: set versionCode here.
   	  parser.exportXML(template.getAbsolutePath()+"/AndroidManifest.xml");
 
+            Log.i(LOG_TAG, "Updating resources.arsc");
 	  BinaryResourceParser resParser = new BinaryResourceParser(template.getAbsolutePath()+"/resources.arsc");
 	  resParser.parseResource();
 	  resParser.changePackageName(packageName);
@@ -178,6 +184,7 @@ public class APKPackager  extends CordovaPlugin {
 
 	//TODO: to copy the assets directory in the template
 	try {
+        Log.i(LOG_TAG, "Copying in application assets");
 	    File destWww = new File(new File(template, "assets"), "www");
 	    mergeDirectory(cra, wwwDir, destWww);
 	} catch (Exception e) {
@@ -193,6 +200,7 @@ public class APKPackager  extends CordovaPlugin {
             fakeResZip = new File(playground,"FakeResourceZipFile.zip");
             writeZipfile(fakeResZip);
 
+            Log.i(LOG_TAG, "Building .apk file");
             ApkBuilder b = new ApkBuilder(generatedApkPath,fakeResZip.getPath(), null,null,null,null);
 	    b.addSourceFolder(template);
             b.sealApk();
@@ -203,6 +211,7 @@ public class APKPackager  extends CordovaPlugin {
 
         // sign the APK with the supplied key/cert
         try {
+            Log.i(LOG_TAG, "Signing .apk file");
             zipSigner.signZip(generatedApkPath, output.getAbsolutePath());
         } catch (Exception e) {
             callbackContext.error("ZipSigner Error: "+e.getMessage());
@@ -211,6 +220,7 @@ public class APKPackager  extends CordovaPlugin {
 
         // After signing apk , delete intermediate stuff
         try {
+            Log.i(LOG_TAG, "Deleting temporary files");
             new File(generatedApkPath).delete();
 	    fakeResZip.delete();
         } catch (Exception e) {
@@ -218,7 +228,7 @@ public class APKPackager  extends CordovaPlugin {
             return;
 	}
 
-        callbackContext.success("succes for " + appName);
+        callbackContext.success();
     }
 
     private static String join(String a, String b) {
