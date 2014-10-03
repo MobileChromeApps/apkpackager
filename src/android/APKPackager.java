@@ -30,9 +30,9 @@ import kellinwood.security.zipsigner.ZipSigner;
 import android.content.Context;
 import android.content.res.AssetManager;
 import android.net.Uri;
+import android.os.Build;
 import android.util.Log;
 import com.android.sdklib.build.*;
-import org.spongycastle.jce.provider.BouncyCastleProvider;
 import org.json.JSONObject;
 
 import com.axml.enddec.BinaryXMLParser;
@@ -45,17 +45,18 @@ import org.apache.cordova.CordovaPlugin;
 import org.apache.cordova.CordovaResourceApi;
 import org.apache.cordova.CordovaWebView;
 import org.json.JSONException;
+import org.spongycastle.jce.provider.BouncyCastleProvider;
 
 
 public class APKPackager  extends CordovaPlugin {
 
     private String LOG_TAG = "APKPackage";
-    private String returnMsg = "";
 
     static {
+        // This is required for ZipSigner to not throw "NoSuchProviderException: SC"
         Security.addProvider(new BouncyCastleProvider());
     }
-  
+
     @Override
     public void initialize(final CordovaInterface cordova, CordovaWebView webView) {
         super.initialize(cordova, webView);
@@ -108,33 +109,30 @@ public class APKPackager  extends CordovaPlugin {
 	}
         Log.i(LOG_TAG, "Packaging started for " + packageName);
 
-        ZipSigner zipSigner = null;
+        X509Certificate cert = null;
+        PrivateKey privateKey = null;
         try {
-            zipSigner = new ZipSigner();
             String keyPassword = signingInfo.getString("keyPassword");
-            if (signingInfo.has("publicKeyUrl")) {
-                Log.i(LOG_TAG, "Loading keys from certificate / private key pair");
-                X509Certificate cert = zipSigner.readPublicKey(new URL(cra.remapUri(Uri.parse(signingInfo.getString("publicKeyUrl"))).toString()));
-                PrivateKey pk = zipSigner.readPrivateKey(new URL(cra.remapUri(Uri.parse(signingInfo.getString("privateKeyUrl"))).toString()), keyPassword);
-                zipSigner.setKeys("custom", cert, pk, null);
+            if (signingInfo.has("certificateUrl")) {
+                Log.i(LOG_TAG, "Loading keys from certificate / private key pair ");
+                ZipSigner zipSigner = new ZipSigner();
+                cert = zipSigner.readPublicKey(new URL(cra.remapUri(Uri.parse(signingInfo.getString("certificateUrl"))).toString()));
+                privateKey = zipSigner.readPrivateKey(new URL(cra.remapUri(Uri.parse(signingInfo.getString("privateKeyUrl"))).toString()), keyPassword);
             } else {
-                Log.i(LOG_TAG, "Loading keys from keystore");
+                String storeType = signingInfo.getString("storeType");
+                String keyAlias = signingInfo.getString("keyAlias");
+                Log.i(LOG_TAG, "Loading key \"" + keyAlias + "\" from keystore of type " + storeType);
                 URL keyStoreUrl = new URL(cra.remapUri(Uri.parse(signingInfo.getString("keyStoreUrl"))).toString());
                 char[] keyStorePassword = signingInfo.getString("storePassword").toCharArray();
-                String keyAlias = signingInfo.getString("keyAlias");
 
                 InputStream keystoreStream = null;
                 try {
-                    KeyStore keystore = KeyStore.getInstance("BKS");
+                    KeyStore keystore = KeyStore.getInstance(storeType);
 
                     keystoreStream = keyStoreUrl.openStream();
                     keystore.load(keystoreStream, keyStorePassword);
-                    Certificate cert = keystore.getCertificate(keyAlias);
-                    X509Certificate publicKey = (X509Certificate) cert;
-                    Key key = keystore.getKey(keyAlias, keyPassword.toCharArray());
-                    PrivateKey privateKey = (PrivateKey) key;
-
-                    zipSigner.setKeys("custom", publicKey, privateKey, "RSA", null);
+                    cert = (X509Certificate) keystore.getCertificate(keyAlias);
+                    privateKey = (PrivateKey) keystore.getKey(keyAlias, keyPassword.toCharArray());;
                 } finally {
                     if (keystoreStream != null) keystoreStream.close();
                 }
@@ -176,6 +174,7 @@ public class APKPackager  extends CordovaPlugin {
 	  resParser.exportResource(template.getAbsolutePath()+"/resources.arsc");
 
 	} catch (Exception e) {
+            e.printStackTrace();
 	    callbackContext.error("Error at modifing the Android Manifest: "+e.getMessage());
 	}
 
@@ -188,6 +187,7 @@ public class APKPackager  extends CordovaPlugin {
 	    File destWww = new File(new File(template, "assets"), "www");
 	    mergeDirectory(cra, wwwDir, destWww);
 	} catch (Exception e) {
+        e.printStackTrace();
             callbackContext.error("Error at assets copy: "+e.getMessage());
             return;
 	}
@@ -201,10 +201,31 @@ public class APKPackager  extends CordovaPlugin {
             writeZipfile(fakeResZip);
 
             Log.i(LOG_TAG, "Building .apk file");
+            // TODO: ApkBuilder is capable of siging if we pass key / cert to this function.
+            // Currently running into a problem with ClassNotFound though. May need to make
+            // a custom version of ApkBuilder with a different Base64 implementation.
+            // A custom version would also be good to avoid having to extract the template
+            // out of android_assets (or maybe the .pak file gets extracted already?)
             ApkBuilder b = new ApkBuilder(generatedApkPath,fakeResZip.getPath(), null,null,null,null);
 	    b.addSourceFolder(template);
+            Log.i(LOG_TAG, "Adding in .so files");
+            // TODO: This will take only the active arch. We'll want options for FAT bin & other arch.
+            // ApkBuilder's inner methods have ability to copy directly from another zip (aka, our apk
+            // found at "cordova.getActivity().getApplicationInfo().nativeLibraryDir"). We should make
+            // a custom version of ApkBuilder that takes resources and .so file straight from there
+            // to skip the unzip & re-zip steps.
+            String libPathPrefix = "lib/";
+            if (Build.CPU_ABI.startsWith("arm")) {
+                libPathPrefix += "armeabi-v7a/";
+            } else {
+                libPathPrefix += "x86/";
+            }
+            for (File f : new File(cordova.getActivity().getApplicationInfo().nativeLibraryDir).listFiles()) {
+                b.addFile(f, libPathPrefix + f.getName());
+            }
             b.sealApk();
         } catch (Exception e) {
+            e.printStackTrace();
             callbackContext.error("ApkBuilder Error: "+e.getMessage());
             return;
         }
@@ -212,8 +233,11 @@ public class APKPackager  extends CordovaPlugin {
         // sign the APK with the supplied key/cert
         try {
             Log.i(LOG_TAG, "Signing .apk file");
+            ZipSigner zipSigner = new ZipSigner();
+            zipSigner.setKeys("foo", cert, privateKey, null);
             zipSigner.signZip(generatedApkPath, output.getAbsolutePath());
         } catch (Exception e) {
+            e.printStackTrace();
             callbackContext.error("ZipSigner Error: "+e.getMessage());
             return;
 	    }
@@ -224,6 +248,7 @@ public class APKPackager  extends CordovaPlugin {
             new File(generatedApkPath).delete();
 	    fakeResZip.delete();
         } catch (Exception e) {
+            e.printStackTrace();
             callbackContext.error("Error cleaning up: "+e.getMessage());
             return;
 	}
