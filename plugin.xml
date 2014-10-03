@@ -22,6 +22,22 @@
 
   <platform name="android">
     <source-file src="src/android/APKPackager.java" target-dir="src/org/chromium" />
+    <source-file src="axml-enddec/src/com/axml/enddec/AttributeChunk.java" target-dir="src/com/axml/enddec" />
+    <source-file src="axml-enddec/src/com/axml/enddec/BinaryResource.java" target-dir="src/com/axml/enddec" />
+    <source-file src="axml-enddec/src/com/axml/enddec/BinaryResourceParser.java" target-dir="src/com/axml/enddec" />
+    <source-file src="axml-enddec/src/com/axml/enddec/BinaryXML.java" target-dir="src/com/axml/enddec" />
+    <source-file src="axml-enddec/src/com/axml/enddec/BinaryXMLParser.java" target-dir="src/com/axml/enddec" />
+    <source-file src="axml-enddec/src/com/axml/enddec/Chunk.java" target-dir="src/com/axml/enddec" />
+    <source-file src="axml-enddec/src/com/axml/enddec/EndElementChunk.java" target-dir="src/com/axml/enddec" />
+    <source-file src="axml-enddec/src/com/axml/enddec/endNC.java" target-dir="src/com/axml/enddec" />
+    <source-file src="axml-enddec/src/com/axml/enddec/PackageChunk.java" target-dir="src/com/axml/enddec" />
+    <source-file src="axml-enddec/src/com/axml/enddec/StartElementChunk.java" target-dir="src/com/axml/enddec" />
+    <source-file src="axml-enddec/src/com/axml/enddec/startNC.java" target-dir="src/com/axml/enddec" />
+    <source-file src="axml-enddec/src/com/axml/enddec/Streamable.java" target-dir="src/com/axml/enddec" />
+    <source-file src="axml-enddec/src/com/axml/enddec/StringPool.java" target-dir="src/com/axml/enddec" />
+    <source-file src="axml-enddec/src/com/axml/enddec/TableChunk.java" target-dir="src/com/axml/enddec" />
+    <source-file src="axml-enddec/src/com/axml/enddec/XMLChunk.java" target-dir="src/com/axml/enddec" />
+    <source-file src="axml-enddec/src/com/axml/enddec/XMLResourceMap.java" target-dir="src/com/axml/enddec" />
  
     <source-file src="lib/libs/kellinwood-logging-android-1.4.jar" target-dir="libs" />
     <source-file src="lib/libs/kellinwood-logging-lib-1.1.jar" target-dir="libs" />
@@ -33,7 +49,6 @@
     <source-file src="lib/libs/zipio-lib-1.8.jar" target-dir="libs" />
     <source-file src="lib/libs/zipsigner-lib-1.17.jar" target-dir="libs" />
     <source-file src="lib/libs/zipsigner-lib-optional-1.16.jar" target-dir="libs" />
-    <source-file src="lib/libs/axml.jar" target-dir="libs" />
 
     <config-file target="res/xml/config.xml" parent="/widget">
       <feature name="APKPackager">
